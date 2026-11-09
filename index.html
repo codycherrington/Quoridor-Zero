@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Quoridor with an AlphaZero-style AI: play the computer, a friend, get coached, and study openings." />
+    <title>Quoridor Zero</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23744a2a'/><rect x='4' y='14' width='24' height='4' rx='1' fill='%23f2c46d'/><circle cx='16' cy='8' r='4' fill='%23fff7ea'/><circle cx='16' cy='24' r='4' fill='%23302520'/></svg>" />
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <h1>Quoridor <span>Zero</span></h1>
+      </div>
+      <nav class="modes" id="modes" role="tablist" aria-label="Game mode">
+        <button role="tab" data-mode="ai">vs Computer</button>
+        <button role="tab" data-mode="local">Two Players</button>
+        <button role="tab" data-mode="coach">Coach</button>
+        <button role="tab" data-mode="explore">Openings</button>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <section class="board-col">
+        <div class="player-card" id="card-top"></div>
+        <div class="board-wrap">
+          <div class="evalbar" id="evalbar" title="Engine's estimate of White's winning chances">
+            <div class="evalbar-fill" id="evalbar-fill"></div>
+            <span class="evalbar-label" id="evalbar-label"></span>
+          </div>
+          <div id="board"></div>
+        </div>
+        <div class="player-card" id="card-bottom"></div>
+      </section>
+
+      <aside class="side">
+        <div class="panel" id="setup"></div>
+
+        <div class="panel status-panel">
+          <div id="status" class="status"></div>
+          <div class="controls">
+            <button id="btn-new" class="primary">New game</button>
+            <button id="btn-undo" title="Undo (←)">Undo</button>
+            <button id="btn-redo" title="Redo (→)">Redo</button>
+            <button id="btn-hint" title="Show the engine's top moves (H)">Hint</button>
+            <button id="btn-flip" title="Flip board (F)">Flip</button>
+          </div>
+          <label class="toggle"><input type="checkbox" id="chk-analysis" /> Live analysis</label>
+        </div>
+
+        <div class="panel" id="coach-panel" hidden></div>
+        <div class="panel" id="analysis-panel" hidden></div>
+
+        <div class="panel">
+          <h2>Moves</h2>
+          <ol class="movelist" id="movelist"></ol>
+        </div>
+
+        <details class="panel help">
+          <summary>How to play</summary>
+          <p>Race your pawn to the far side. Each turn either <b>move</b> one square (click a dotted square) or <b>place a wall</b> (hover the grooves between squares and click; on touch screens tap once to preview, again to place).</p>
+          <p>Walls are two squares long, can't overlap or cross, and may never completely cut off a player's path. Facing pawns can be jumped; if a wall is behind, jump diagonally.</p>
+          <p>Notation: squares <code>a1</code>–<code>i9</code>; walls are named by the square to their lower-left plus <code>h</code>/<code>v</code>, e.g. <code>e3h</code>.</p>
+          <p class="muted" id="model-info"></p>
+        </details>
+      </aside>
+    </main>
+    <script type="module" src="/src/ui/main.ts"></script>
+  </body>
+</html>
