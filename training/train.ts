@@ -56,14 +56,10 @@ const gateSims = Number(args['gate-sims']);
 const threads = args.threads ? Number(args.threads) : undefined;
 fs.mkdirSync(args.runs!, { recursive: true });
 
-let net = args.resume ? Net.fromJSON(fs.readFileSync(args.resume, 'utf8')) : new Net(DEFAULT_CONFIG);
-let best = net.toJSON();
-let generation = 0;
-if (args.resume) {
-  try {
-    generation = Number(JSON.parse(best).meta?.generation ?? 0);
-  } catch {}
-}
+const resumeJson = args.resume ? fs.readFileSync(args.resume, 'utf8') : null;
+let net = resumeJson ? Net.fromJSON(resumeJson) : new Net(DEFAULT_CONFIG);
+let generation = resumeJson ? Number(JSON.parse(resumeJson).meta?.generation ?? 0) : 0;
+let best = resumeJson ?? net.toJSON();
 const buffer: Sample[] = [];
 const log = (s: string) => {
   const line = `[${new Date().toISOString().slice(11, 19)}] ${s}`;
