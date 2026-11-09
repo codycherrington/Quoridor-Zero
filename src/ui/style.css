@@ -728,3 +728,144 @@ code {
 .dot.p1 {
   border-color: var(--muted);
 }
+
+/* ---------- wall tray ---------- */
+.wall-tray {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.wall-tray.disabled {
+  opacity: 0.5;
+}
+.tray-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+.tray-pieces {
+  display: flex;
+  gap: 10px;
+}
+.tray-piece {
+  width: 92px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  cursor: grab;
+  background: var(--board);
+  border-color: var(--board-edge);
+}
+.wall-tray.disabled .tray-piece {
+  cursor: default;
+}
+.tray-piece i {
+  display: block;
+  border-radius: 3px;
+  background: var(--wall0);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+}
+.wall-tray[data-player='1'] .tray-piece i {
+  background: var(--wall1);
+}
+.piece-h {
+  width: 66px;
+  height: 9px;
+}
+.piece-v {
+  width: 9px;
+  height: 42px;
+}
+.wall-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 50;
+  pointer-events: none;
+  border-radius: 3px;
+  opacity: 0.85;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
+}
+.wall-ghost.h {
+  width: 96px;
+  height: 10px;
+}
+.wall-ghost.v {
+  width: 10px;
+  height: 96px;
+}
+.wall-ghost.p0 {
+  background: var(--wall0);
+}
+.wall-ghost.p1 {
+  background: var(--wall1);
+}
+.wall-ghost.over-board {
+  opacity: 0.25;
+}
+
+/* ---------- compact phone layout: board + wall tray on one screen ---------- */
+@media (max-width: 560px) {
+  .topbar {
+    padding-block: 8px;
+    gap: 8px;
+  }
+  .brand h1 {
+    font-size: 18px;
+  }
+  .logo {
+    width: 22px;
+    height: 22px;
+  }
+  .modes {
+    padding: 3px;
+  }
+  .modes button {
+    padding: 6px 2px;
+    font-size: 12.5px;
+  }
+  .board-col {
+    gap: 6px;
+  }
+  .player-card {
+    min-height: 0;
+    padding: 5px 12px;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .wallbank i {
+    height: 14px;
+    width: 4px;
+  }
+  .evalbar {
+    width: 8px;
+  }
+  .board-wrap {
+    gap: 6px;
+  }
+  .wall-tray {
+    padding: 6px 10px;
+    flex-wrap: nowrap;
+  }
+  .tray-label {
+    font-size: 13px;
+    line-height: 1.25;
+  }
+  .tray-piece {
+    width: 76px;
+    height: 46px;
+    flex-shrink: 0;
+  }
+  .piece-h {
+    width: 54px;
+  }
+  .piece-v {
+    height: 34px;
+  }
+}

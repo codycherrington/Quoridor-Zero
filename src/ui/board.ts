@@ -177,6 +177,43 @@ export class BoardUI {
     setTimeout(() => rect.remove(), 350);
   }
 
+  // ---------- drag-and-drop walls (used by the wall tray) ----------
+  /** Can the player to move place a wall right now? */
+  canPlaceWalls(): boolean {
+    return !!this.view?.interactive && !!this.legalWalls && this.legalWalls.size > 0;
+  }
+
+  /**
+   * Snap a dragged wall at client coordinates to the nearest groove and preview it.
+   * Returns the wall action if that spot is legal, otherwise null.
+   */
+  dragWallTo(clientX: number, clientY: number, horizontal: boolean): number | null {
+    if (!this.view) return null;
+    const pt = this.svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const p = pt.matrixTransform(this.svg.getScreenCTM()!.inverse());
+    const gx = p.x - PAD;
+    const gy = p.y - PAD;
+    const span = SIZE - 2 * PAD;
+    const margin = PITCH * 0.75;
+    if (gx < -margin || gy < -margin || gx > span + margin || gy > span + margin) {
+      this.setPreview(null);
+      return null;
+    }
+    const dCol = Math.max(0, Math.min(7, Math.round((gx - CELL - GAP / 2) / PITCH)));
+    const dRow = Math.max(0, Math.min(7, Math.round((gy - CELL - GAP / 2) / PITCH)));
+    const c = this.view.flipped ? 7 - dCol : dCol;
+    const r = this.view.flipped ? dRow : 7 - dRow;
+    const a = (horizontal ? H_OFFSET : V_OFFSET) + r * 8 + c;
+    this.setPreview(a);
+    return this.legalWalls?.has(a) ? a : null;
+  }
+
+  endWallDrag() {
+    this.setPreview(null);
+  }
+
   private setPreview(a: number | null) {
     if (a === this.preview) return;
     this.preview = a;

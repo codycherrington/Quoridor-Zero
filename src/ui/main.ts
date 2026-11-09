@@ -365,6 +365,7 @@ function renderBoard() {
     markers: markersFrom(showMarkers, 3),
     flipped: state.flipped,
   });
+  renderTray();
 }
 
 function renderPanels() {
@@ -618,7 +619,74 @@ function renderEval() {
   $('evalbar-label').textContent = `${pct}`;
 }
 
+// ---------------- wall tray (drag & drop) ----------------
+function setupWallTray() {
+  const ghost = document.createElement('div');
+  ghost.className = 'wall-ghost';
+  ghost.hidden = true;
+  document.body.appendChild(ghost);
+  document.querySelectorAll<HTMLButtonElement>('.tray-piece').forEach((piece) => {
+    const horizontal = piece.dataset.orient === 'h';
+    let dragging = false;
+    let target: number | null = null;
+    // keep the wall visible above a finger; a mouse doesn't cover anything
+    let lift = 0;
+    const move = (e: PointerEvent) => {
+      if (!dragging) return;
+      const x = e.clientX;
+      const y = e.clientY - lift;
+      ghost.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+      target = board.dragWallTo(x, y, horizontal);
+      ghost.classList.toggle('over-board', target !== null);
+    };
+    let pointerId = -1;
+    const onMove = (e: PointerEvent) => e.pointerId === pointerId && move(e);
+    const onUp = (e: PointerEvent) => e.pointerId === pointerId && finish(e.type === 'pointerup');
+    const finish = (commit: boolean) => {
+      if (!dragging) return;
+      dragging = false;
+      ghost.hidden = true;
+      board.endWallDrag();
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (commit && target !== null) humanMove(target);
+    };
+    piece.addEventListener('pointerdown', (e) => {
+      if (!board.canPlaceWalls()) return;
+      e.preventDefault();
+      pointerId = e.pointerId;
+      dragging = true;
+      target = null;
+      lift = e.pointerType === 'mouse' ? 0 : 56;
+      ghost.className = `wall-ghost ${horizontal ? 'h' : 'v'} p${currentGame().turn}`;
+      ghost.hidden = false;
+      // follow the pointer anywhere on the page, not just over the tray button
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      move(e);
+    });
+  });
+}
+
+function renderTray() {
+  const g = currentGame();
+  const tray = $('wall-tray');
+  const can = board.canPlaceWalls();
+  tray.classList.toggle('disabled', !can);
+  tray.dataset.player = String(g.turn);
+  $('wall-tray').querySelector('.tray-label')!.textContent = g.over
+    ? 'Game over'
+    : g.walls[g.turn] === 0
+      ? `${playerName(g.turn)} has no walls left`
+      : can
+        ? `Drag a wall onto the board (${g.walls[g.turn]} left)`
+        : 'Waiting…';
+}
+
 // ---------------- wiring ----------------
+setupWallTray();
 document.querySelectorAll<HTMLButtonElement>('#modes button').forEach((b) =>
   b.addEventListener('click', () => {
     const m = b.dataset.mode as Mode;
