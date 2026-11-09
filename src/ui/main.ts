@@ -51,7 +51,13 @@ const state = {
   thinking: false,
   grading: false,
   modelInfo: 'loading…',
+  /** Openings mode: free exploration or a drill where you must find good moves for one side */
+  drillOn: (saved.drillOn as boolean) ?? false,
+  drillSide: (saved.drillSide as number) ?? 0,
+  drill: { right: 0, total: 0, attempted: false, msg: '', cls: '' },
 };
+const DRILL_PLIES = 14;
+const DRILL_TOLERANCE = 0.04; // win-probability points a move may lose and still count as correct
 
 function loadSettings(): Record<string, unknown> {
   try {
@@ -62,8 +68,8 @@ function loadSettings(): Record<string, unknown> {
 }
 function saveSettings() {
   try {
-    const { mode, humanSide, sidePref, level, liveAnalysis } = state;
-    localStorage.setItem('qz-settings', JSON.stringify({ mode, humanSide, sidePref, level, liveAnalysis }));
+    const { mode, humanSide, sidePref, level, liveAnalysis, drillOn, drillSide } = state;
+    localStorage.setItem('qz-settings', JSON.stringify({ mode, humanSide, sidePref, level, liveAnalysis, drillOn, drillSide }));
   } catch {
     /* storage unavailable */
   }
@@ -71,10 +77,11 @@ function saveSettings() {
 
 // ---------------- worker ----------------
 const worker = new Worker(new URL('./ai-worker.ts', import.meta.url), { type: 'module' });
+worker.postMessage({ type: 'init', base: new URL(import.meta.env.BASE_URL, location.href).href } satisfies WorkerRequest);
 let reqId = 0;
 const pending = new Map<number, (msg: WorkerResponse) => void>();
 type DistOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-function send(req: DistOmit<Exclude<WorkerRequest, { type: 'cancel' }>, 'id'>, handler: (msg: WorkerResponse) => void): number {
+function send(req: DistOmit<Exclude<WorkerRequest, { type: 'cancel' } | { type: 'init' }>, 'id'>, handler: (msg: WorkerResponse) => void): number {
   const id = ++reqId;
   pending.set(id, handler);
   worker.postMessage({ ...req, id });
@@ -110,7 +117,12 @@ function currentGame(): Game {
   return g;
 }
 const winPct = (q: number) => Math.round(((q + 1) / 2) * 100);
-const isAiTurn = (g: Game) => (state.mode === 'ai' || state.mode === 'coach') && g.turn !== state.humanSide && !g.over;
+const drilling = () => state.mode === 'explore' && state.drillOn;
+const drillDone = () => drilling() && state.moves.length >= DRILL_PLIES;
+const isAiTurn = (g: Game) =>
+  !g.over &&
+  (((state.mode === 'ai' || state.mode === 'coach') && g.turn !== state.humanSide) ||
+    (drilling() && g.turn !== state.drillSide && !drillDone()));
 const playerName = (p: number) => (p === 0 ? 'White' : 'Black');
 const fmtPv = (pv: number[]) => pv.slice(0, 6).map(actionToString).join(' ');
 
@@ -126,14 +138,78 @@ function gradeFor(drop: number, isBest: boolean): Grade {
 // ---------------- game flow ----------------
 function humanMove(a: number) {
   const g = currentGame();
-  if (g.over || isAiTurn(g) || state.thinking || !g.isLegal(a)) return;
+  if (g.over || isAiTurn(g) || state.thinking || state.grading || drillDone() || !g.isLegal(a)) return;
   const before = state.moves.slice();
+  if (drilling()) return drillMove(before, a);
   state.moves.push(a);
   state.redo = [];
   state.hint = null;
   state.analysis = null;
   if (state.mode === 'coach') requestGrade(before, a);
   refresh();
+}
+
+function drillMove(before: number[], action: number) {
+  state.moves.push(action);
+  state.grading = true;
+  state.hint = null;
+  state.drill.msg = '';
+  renderBoard();
+  renderPanels();
+  send({ type: 'grade', moves: before, action, sims: GRADE_SIMS }, (msg) => {
+    if (msg.type !== 'grade') return;
+    state.grading = false;
+    const drop = Math.max(0, (msg.bestQ - msg.playedQ) / 2);
+    const ok = msg.bestAction === action || drop <= DRILL_TOLERANCE;
+    const d = state.drill;
+    if (!d.attempted) {
+      d.total++;
+      if (ok) d.right++;
+    }
+    const name = actionToString(action);
+    if (ok) {
+      d.attempted = false;
+      d.cls = 'g-best';
+      d.msg =
+        msg.bestAction === action
+          ? `✓ <b>${name}</b> — the engine's top choice.`
+          : `✓ <b>${name}</b> works (engine slightly prefers <b>${actionToString(msg.bestAction)}</b>).`;
+      refresh();
+    } else {
+      d.attempted = true;
+      d.cls = 'g-mistake';
+      d.msg = `✗ <b>${name}</b> gives away about ${Math.round(drop * 100)}% win chance. Try again — or ask for a hint.`;
+      state.moves.pop();
+      renderBoard();
+      renderPanels();
+    }
+  });
+}
+
+/** Drill opponent: plays a varied but sound reply, preferring the opening book. */
+function drillReply() {
+  state.thinking = true;
+  const expectedLen = state.moves.length;
+  send({ type: 'analyze', moves: state.moves.slice(), sims: 1200 }, (msg) => {
+    if (msg.type !== 'analysis' || !msg.done) return;
+    const moves = msg.result.moves.filter((m) => m.visits > 0);
+    const best = moves[0];
+    const cands = moves.filter((m) => m.q >= best.q - 0.06);
+    const weights = cands.map((m) => m.visits * m.visits);
+    let r = Math.random() * weights.reduce((x, y) => x + y, 0);
+    let pick = cands[0];
+    for (let i = 0; i < cands.length; i++) if ((r -= weights[i]) <= 0) {
+      pick = cands[i];
+      break;
+    }
+    setTimeout(() => {
+      state.thinking = false;
+      if (state.moves.length !== expectedLen || !drilling()) return;
+      state.moves.push(pick.action);
+      refresh();
+    }, 350);
+  });
+  renderPanels();
 }
 
 function requestGrade(before: number[], action: number) {
@@ -162,6 +238,11 @@ function requestGrade(before: number[], action: number) {
 function maybeAct() {
   const g = currentGame();
   if (g.over) return;
+  if (isAiTurn(g) && drilling()) {
+    if (!state.thinking) drillReply();
+    return;
+  }
+  if (drilling()) return;
   if (isAiTurn(g)) {
     if (state.thinking) return;
     state.thinking = true;
@@ -176,7 +257,7 @@ function maybeAct() {
     renderPanels();
     return;
   }
-  const wantAnalysis = state.mode === 'explore' || state.liveAnalysis;
+  const wantAnalysis = state.mode === 'explore' || state.liveAnalysis;  // (drilling returned above)
   if (wantAnalysis) {
     const ply = state.moves.length;
     send({ type: 'analyze', moves: state.moves.slice(), sims: ANALYSIS_SIMS }, (msg) => {
@@ -199,7 +280,9 @@ function newGame() {
   state.hint = null;
   state.analysis = null;
   state.feedback.clear();
-  if (state.mode === 'ai' || state.mode === 'coach') {
+  state.drill = { right: 0, total: 0, attempted: false, msg: '', cls: '' };
+  if (drilling()) state.flipped = state.drillSide === 1;
+  else if (state.mode === 'ai' || state.mode === 'coach') {
     state.humanSide = state.sidePref === 'random' ? (Math.random() < 0.5 ? 0 : 1) : state.sidePref === 'black' ? 1 : 0;
     state.flipped = state.humanSide === 1;
   } else state.flipped = false;
@@ -210,15 +293,15 @@ function newGame() {
 function undo() {
   if (!state.moves.length) return;
   cancelAll();
-  const vsAi = state.mode === 'ai' || state.mode === 'coach';
+  const vsAi = state.mode === 'ai' || state.mode === 'coach' || drilling();
+  const side = drilling() ? state.drillSide : state.humanSide;
   do {
     const a = state.moves.pop()!;
     state.redo.push(a);
     state.feedback.delete(state.moves.length);
-  } while (vsAi && state.moves.length && currentGame().turn !== state.humanSide);
-  if (vsAi && currentGame().turn !== state.humanSide) {
-    // undid back to the start with the AI to move: that's fine, it will move again
-  }
+  } while (vsAi && state.moves.length && currentGame().turn !== side);
+  state.drill.msg = '';
+  state.drill.attempted = false;
   state.hint = null;
   state.analysis = null;
   refresh();
@@ -227,6 +310,7 @@ function undo() {
 function redo() {
   if (!state.redo.length) return;
   cancelAll();
+  if (drilling()) return;
   const vsAi = state.mode === 'ai' || state.mode === 'coach';
   do {
     state.moves.push(state.redo.pop()!);
@@ -271,12 +355,13 @@ function renderBoard() {
   const g = currentGame();
   const owners = new Map<number, number>();
   state.moves.forEach((a, i) => a >= CELLS && owners.set(a, i % 2));
-  const showMarkers = state.hint ?? (state.analysis && (state.mode === 'explore' || state.liveAnalysis) ? state.analysis.result : null);
+  const showMarkers =
+    state.hint ?? (state.analysis && ((state.mode === 'explore' && !drilling()) || state.liveAnalysis) ? state.analysis.result : null);
   board.render({
     game: g,
     wallOwners: owners,
     lastMove: state.moves.length ? state.moves[state.moves.length - 1] : null,
-    interactive: !g.over && !isAiTurn(g) && !state.thinking,
+    interactive: !g.over && !isAiTurn(g) && !state.thinking && !state.grading && !drillDone(),
     markers: markersFrom(showMarkers, 3),
     flipped: state.flipped,
   });
@@ -300,13 +385,15 @@ function renderPanels() {
   ($('btn-hint') as HTMLButtonElement).disabled = g.over || isAiTurn(g);
   ($('chk-analysis') as HTMLInputElement).checked = state.liveAnalysis || state.mode === 'explore';
   ($('chk-analysis') as HTMLInputElement).disabled = state.mode === 'explore';
+  ($('chk-analysis').parentElement as HTMLElement).hidden = drilling();
+  ($('btn-redo') as HTMLButtonElement).hidden = drilling();
 }
 
 const MODE_INTRO: Record<Mode, string> = {
   ai: 'Play the trained engine. Pick a side and a strength.',
   local: 'Pass-and-play on one screen. Ask for a hint whenever you like.',
   coach: 'Play the engine while it grades every move you make — with extra attention to your opening.',
-  explore: 'Step through openings for both sides. The engine (and its opening book) ranks every candidate move. Click a suggestion to play it.',
+  explore: 'Study openings. <b>Explore</b>: play both sides while the engine ranks every candidate (click one to play it). <b>Drill</b>: find good moves yourself against varied book replies.',
 };
 
 function renderSetup() {
@@ -326,7 +413,24 @@ function renderSetup() {
           </div></div>
           <p class="muted small">${levelById(state.level).blurb} Side changes apply on New game.</p>`
         : ''
+    }
+    ${
+      state.mode === 'explore'
+        ? `<div class="seg" id="explore-seg">
+            <button data-drill="off" class="${!state.drillOn ? 'active' : ''}">Explore</button>
+            <button data-drill="0" class="${state.drillOn && state.drillSide === 0 ? 'active' : ''}">Drill as White</button>
+            <button data-drill="1" class="${state.drillOn && state.drillSide === 1 ? 'active' : ''}">Drill as Black</button>
+          </div>`
+        : ''
     }`;
+  el.querySelectorAll<HTMLButtonElement>('[data-drill]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const v = b.dataset.drill!;
+      state.drillOn = v !== 'off';
+      if (state.drillOn) state.drillSide = Number(v);
+      newGame();
+    }),
+  );
   el.querySelectorAll<HTMLButtonElement>('[data-side]').forEach((b) =>
     b.addEventListener('click', () => {
       state.sidePref = b.dataset.side as 'white' | 'black' | 'random';
@@ -394,7 +498,7 @@ function renderMoves() {
       const last = ply === state.moves.length - 1 ? ' last' : '';
       return `<span class="mv ${cls}${last}">${actionToString(state.moves[ply])}${sym ? `<sup>${sym}</sup>` : ''}</span>`;
     };
-    items.push(`<li>${cellFor(i)}${cellFor(i + 1)}</li>`);
+    items.push(`<li><span class="num">${i / 2 + 1}.</span>${cellFor(i)}${cellFor(i + 1)}</li>`);
   }
   ol.innerHTML = items.join('') || '<li class="muted empty">No moves yet</li>';
   ol.scrollTop = ol.scrollHeight;
@@ -402,6 +506,7 @@ function renderMoves() {
 
 function renderCoach() {
   const panel = $('coach-panel');
+  if (drilling()) return renderDrill(panel);
   if (state.mode !== 'coach') {
     panel.hidden = true;
     return;
@@ -437,9 +542,29 @@ function renderCoach() {
     ${counts ? `<p class="muted small">${counts}</p>` : ''}`;
 }
 
+function renderDrill(panel: HTMLElement) {
+  panel.hidden = false;
+  const d = state.drill;
+  const pct = d.total ? Math.round((100 * d.right) / d.total) : null;
+  const yourMoves = Math.ceil(DRILL_PLIES / 2);
+  let body: string;
+  if (state.grading) body = `<div class="fb pending">Checking<span class="ellipsis"></span></div>`;
+  else if (drillDone())
+    body = `<div class="fb g-best"><b>Line complete!</b> You found a sound move first try ${d.right} of ${d.total} times.</div>
+      <button class="primary" id="btn-next-line">Next line</button>`;
+  else if (d.msg) body = `<div class="fb ${d.cls}">${d.msg}</div>`;
+  else body = `<div class="fb muted">Find a strong move for ${playerName(state.drillSide)}. The engine replies with varied book moves.</div>`;
+  panel.innerHTML = `<h2>Opening drill</h2>${body}
+    <div class="stats">
+      <div><span class="big">${d.right}/${d.total}</span><span class="muted">first-try correct</span></div>
+      <div><span class="big">${pct ?? '—'}${pct !== null ? '%' : ''}</span><span class="muted">of ${yourMoves} moves per line</span></div>
+    </div>`;
+  panel.querySelector('#btn-next-line')?.addEventListener('click', newGame);
+}
+
 function renderAnalysis() {
   const panel = $('analysis-panel');
-  const show = state.hint || state.mode === 'explore' || state.liveAnalysis;
+  const show = state.hint || (state.mode === 'explore' && !drilling()) || state.liveAnalysis;
   const res = state.hint ?? state.analysis?.result ?? null;
   const g = currentGame();
   if (!show || g.over) {
@@ -480,7 +605,7 @@ function renderAnalysis() {
 function renderEval() {
   const g = currentGame();
   const res = state.hint ?? state.analysis?.result;
-  const showEval = (state.mode === 'explore' || state.liveAnalysis || state.hint) && res && !g.over;
+  const showEval = ((state.mode === 'explore' && !drilling()) || state.liveAnalysis || state.hint) && res && !g.over;
   const bar = $('evalbar');
   bar.classList.toggle('hidden', !showEval);
   if (!showEval || !res) return;

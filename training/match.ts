@@ -33,7 +33,7 @@ export function playMatch(a: AgentSpec, b: AgentSpec, aFirst: boolean, rng: () =
     const m = new MCTS(g, evaluatorFor(spec), {}, rng);
     m.search(spec.sims);
     // a little opening variety so matches are not all identical
-    const act = m.pick(g.ply < 4 ? 0.5 : 0);
+    const act = m.pick(g.ply < 6 ? 1 : 0);
     g.play(act);
   }
   if (g.winner === 2) return { score: 0.5, plies: g.ply };

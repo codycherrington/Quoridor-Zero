@@ -10,7 +10,8 @@ export type WorkerRequest =
   | { type: 'move'; id: number; moves: number[]; level: number }
   | { type: 'analyze'; id: number; moves: number[]; sims: number; useBook?: boolean }
   | { type: 'grade'; id: number; moves: number[]; action: number; sims: number }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  | { type: 'init'; base: string };
 
 export type WorkerResponse =
   | { type: 'ready'; modelInfo: string; bookSize: number }

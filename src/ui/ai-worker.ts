@@ -18,10 +18,15 @@ let softGen = 0;
 type Token = { hard: number; soft: number | null };
 const alive = (t: Token) => t.hard === hardGen && (t.soft === null || t.soft === softGen);
 
+let resolveBase: (b: string) => void = () => {};
+const baseUrl = new Promise<string>((r) => (resolveBase = r));
+
 const ready = (async () => {
-  const base = (import.meta as any).env?.BASE_URL ?? '/';
+  // The page sends its own base URL: a worker's relative URLs resolve against the worker
+  // script (…/assets/), not the page, so it can't work out where models/ lives by itself.
+  const base = await baseUrl;
   try {
-    const res = await fetch(`${base}models/model.json`);
+    const res = await fetch(new URL('models/model.json', base));
     if (res.ok) {
       const json = await res.json();
       const net = Net.fromJSON(json);
@@ -33,7 +38,7 @@ const ready = (async () => {
     /* fall back to heuristic */
   }
   try {
-    const res = await fetch(`${base}models/book.json`);
+    const res = await fetch(new URL('models/book.json', base));
     if (res.ok) book = (await res.json()).positions ?? {};
   } catch {
     /* no book */
@@ -88,6 +93,10 @@ function bookResult(g: Game): SearchResult | null {
 let chain: Promise<void> = ready;
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
+  if (req.type === 'init') {
+    resolveBase(req.base);
+    return;
+  }
   softGen++;
   if (req.type === 'cancel') {
     hardGen++;
@@ -97,7 +106,7 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
   chain = chain.then(() => handle(req, job)).catch((e) => console.error(e));
 };
 
-async function handle(req: Exclude<WorkerRequest, { type: 'cancel' }>, job: Token): Promise<void> {
+async function handle(req: Exclude<WorkerRequest, { type: 'cancel' } | { type: 'init' }>, job: Token): Promise<void> {
   if (!alive(job)) return;
   const g = gameFrom(req.moves);
   if (g.over) return;

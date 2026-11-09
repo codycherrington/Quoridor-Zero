@@ -46,6 +46,9 @@
 * {
   box-sizing: border-box;
 }
+[hidden] {
+  display: none !important;
+}
 body {
   margin: 0;
   background: var(--bg);
@@ -512,7 +515,8 @@ button:focus-visible,
 /* ---------- move list ---------- */
 .movelist {
   margin: 0;
-  padding: 0 0 0 30px;
+  padding: 0;
+  list-style: none;
   max-height: 220px;
   overflow-y: auto;
   font-variant-numeric: tabular-nums;
@@ -521,16 +525,14 @@ button:focus-visible,
 }
 .movelist li {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 34px 1fr 1fr;
   padding: 1px 0;
 }
-.movelist li::marker {
+.movelist .num {
   color: var(--muted);
 }
 .movelist .empty {
   display: block;
-  list-style: none;
-  margin-left: -30px;
   font-family: inherit;
 }
 .mv {
@@ -699,4 +701,7 @@ code {
   background: var(--bg2);
   padding: 1px 4px;
   border-radius: 4px;
+}
+.dot.p1 {
+  border-color: var(--muted);
 }
