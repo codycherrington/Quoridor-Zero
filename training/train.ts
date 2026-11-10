@@ -36,6 +36,7 @@ const { values: args } = parseArgs({
     'gate-games': { type: 'string', default: '40' },
     'gate-sims': { type: 'string', default: '100' },
     threads: { type: 'string' },
+    until: { type: 'string' },
     resume: { type: 'string' },
     out: { type: 'string', default: 'public/models/model.json' },
     runs: { type: 'string', default: 'training/runs' },
@@ -150,7 +151,12 @@ function summarize(recs: GameRecord[]) {
   return `games=${recs.length} p1=${w[0]} p2=${w[1]} draws=${w[2]} avgPlies=${(plies / recs.length).toFixed(1)} samples=${samples}`;
 }
 
+const stopAt = args.until ? Date.parse(args.until) : Infinity;
 for (let it = 0; it < iters; it++) {
+  if (Date.now() >= stopAt) {
+    log(`reached --until ${args.until}; stopping at generation ${generation}`);
+    break;
+  }
   const t0 = Date.now();
   const useHeuristic = it < bootstrapIters && !args.resume;
   // Heuristic blending in the value decays as training progresses
